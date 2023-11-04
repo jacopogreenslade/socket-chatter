@@ -12,6 +12,11 @@ export FLASK_ENV=development
 python serer.py
 ```
 
+Start Redis (wsl):
+```
+redis-server --save "" --appendonly no
+```
+
 Open the client in the browser:
 `index.html`
 or start a local server to watch for changes ( needs to be figured out ).
