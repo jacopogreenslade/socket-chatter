@@ -1,0 +1,36 @@
+
+.socket {
+  : light;
+}
+
+.socket.active {
+  color: green;
+}
+
+.socket.inactive {
+  color: red;
+}
+
+.socket .name {
+  font-weight: bold;
+}
+
+.socket .id {
+  font-style: italic;
+}
+
+.message {
+
+}
+
+.message .name {
+  font-weight: bold;
+}
+
+.message .id {
+  font-style: italic;
+}
+.message-box {
+  max-height: 300px;
+  overflow-y: auto;
+}

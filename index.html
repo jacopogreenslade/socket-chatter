@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="stylesheet" type="text/css" href="src/styles.css">
+  <title>Sockets test</title>
+  <script src="src/init.js" type="text/javascript"></script>
+</head>
+
+<body>
+  <script src="https://cdn.socket.io/4.6.0/socket.io.min.js" integrity="sha384-c79GN5VsunZvi+Q/WObgk2in0CbZsHnjEqvFxC5DxHn9lTfNce2WW6h2pH6u/kF+" crossorigin="anonymous"></script>
+
+  <h1>This is a simple page that creates socket clients</h1>
+  <div id="socket-counter-wrapper" class="socket-counter">Currently active sockets: 
+    <span id="socket-counter">Wrong</span>
+    <button id="close">Close all connections</button>
+  </div>
+  <div id="socket-agent-container"></div>
+  <h2 class="msg-box-title" >Incoming Messages</h2>
+  <div class="message-box" id="message-box"></div>
+  <span class="latest-message" >latest</span>
+
+</body>
+
+</html>
