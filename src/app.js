@@ -17,13 +17,17 @@ function initApp() {
   messages = new Messages();
   sockets = [];
 
-  const amount = 10;
+  const amount = 5;
   for (let i = 0; i < amount; i++) {
     sockets.push(new SocketClient(`login-1-${i+1}`, "survey160", addMsg))
   }
 
+  httpClient = new HttpClient();
   // Initial update
   tick();
+
+  // Start the Spmmer GOT
+  document.getElementById("start").onclick = startSpamming;
 
   // Destroy all socket connections when done
   document.getElementById("close").onclick = teardown;
@@ -35,6 +39,10 @@ function initApp() {
   //   const id = Math.random().toString(36).slice(2, 7);
   //   sockets[0].incomingHandler({msgId: id, text: "this is a sample text!"});
   // }, 3000)
+}
+
+const startSpamming = () => {
+  httpClient.start();
 }
 
 function teardown() {
@@ -75,6 +83,10 @@ function tick() {
   messageBoxEl.lastChild.scrollIntoView();
 }
 
-window.onunload = teardown;
+if (typeof window !== "undefined") {
+  window.onunload = teardown;
+} else {
+  print("No window");
+}
 
 // Actual socket logic

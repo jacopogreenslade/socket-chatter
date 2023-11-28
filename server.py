@@ -12,7 +12,8 @@ REDIS_HOST = "redis://localhost:6379"
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'secret!'
-socketio = SocketIO(app, cors_allowed_origins="*", message_queue=REDIS_HOST, logger=True)
+socketio = SocketIO(app, async_mode='eventlet', cors_allowed_origins="*", message_queue=REDIS_HOST,
+                    logger=True, engineio_logger=True)
 
 # Long running task
 from concurrent.futures import ThreadPoolExecutor
@@ -47,6 +48,7 @@ def shutdown_connection(data):
 @socketio.on("disconnect")
 def socket_client_disconnected():
     socket_ids.remove(request.sid)
+    print(socket_ids)
     app.logger.info(f"CLIENT DISCONNECTED {request.sid}")
 
 @socketio.on_error()
@@ -62,18 +64,20 @@ def create_random_message(sid):
     s = ''.join(choice(ascii_uppercase) for i in range(12))
     return { "msgSid": sid, "text": s}
 
-def send_messages(end_delay_seconds, msg_per_sec):
+def send_messages(end_delay_seconds, msg_per_sec, step=1):
     """Send out msgs at the given rate and stop after the given amount of time"""
     app.logger.info("STARTED SPAMMER BOT")
     end = time.time() + end_delay_seconds
-    while time.time() < end:
-        for n in range(0, msg_per_sec):
-            sid = socket_ids[randint(0, len(socket_ids)-1)]
-            socketio.call("incoming", data=create_random_message(sid), to=sid, timeout=30)
-            app.logger.info(f"EMIT MESSAGE sid={sid}")
-        
+    for t in range(0, end_delay_seconds, step):
+        for i in range(0, msg_per_sec):
+            app.logger.info(f"MESSAGE SET {t}/{end_delay_seconds}")
+            if len(socket_ids) > 1:
+                sid = socket_ids[randint(0, len(socket_ids)-1)]
+                socketio.call("incoming", data=create_random_message(sid), to=sid)
+                app.logger.info(f"  EMIT MESSAGE {i}/{msg_per_sec}, sid={sid}")
+
         # Wait 1 second each time
-        time.sleep(1)
+        time.sleep(step)
 
     app.logger.info("ENDED SPAMMER BOT")
     
@@ -84,7 +88,7 @@ def start(count: int):
     if len(socket_ids) == 0:
         return "No connected clients.", 400
 
-    send_messages(60, 3)
+    send_messages(count, 3)
 
     return "Done", 200
 
@@ -101,4 +105,4 @@ def ping():
     return "", 200
 
 if __name__ == '__main__':
-    socketio.run(app, host='0.0.0.0')
+    socketio.run(app, host='0.0.0.0', port=3000)

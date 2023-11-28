@@ -1,4 +1,17 @@
-const SOCKET_SERVER_URL = "http://localhost:5000";
+const SOCKET_SERVER_URL = "http://localhost:3000";
+
+class HttpClient {
+  start = () => {
+    const Http = new XMLHttpRequest();
+    const url=`${SOCKET_SERVER_URL}/start/3`;
+    Http.open("GET", url);
+    Http.send();
+
+    Http.onreadystatechange = (e) => {
+      console.log(Http.responseText)
+    }
+  }
+}
 
 class SocketClient {
   constructor(userid, room, addMsgToList) {
