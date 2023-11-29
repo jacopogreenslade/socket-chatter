@@ -82,12 +82,12 @@ def send_messages(end_delay_seconds, msg_per_sec, step=1):
     app.logger.info("ENDED SPAMMER BOT")
     
 
-@app.route("/start/<count>")
-def start(count: int):
+@app.route("/start/<countArg>")
+def start(countArg: int):
     # Start spamming the clients with messages
     if len(socket_ids) == 0:
         return "No connected clients.", 400
-
+    count = int(countArg)
     send_messages(count, 3)
 
     return "Done", 200

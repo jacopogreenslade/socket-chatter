@@ -19,7 +19,7 @@ function initApp() {
 
   const amount = 5;
   for (let i = 0; i < amount; i++) {
-    sockets.push(new SocketClient(`login-1-${i+1}`, "survey160", addMsg))
+    sockets.push([`login-1-${i+1}`, new SocketClient(`login-1-${i+1}`, "survey160", addMsg)])
   }
 
   httpClient = new HttpClient();
@@ -47,7 +47,7 @@ const startSpamming = () => {
 
 function teardown() {
   for (const s of sockets) {
-    s.teardown();
+    s[1].teardown();
   }
 }
 
@@ -58,12 +58,12 @@ function tick() {
   const socketContainerEl = document.getElementById("socket-agent-container");
   socketContainerEl.innerHTML = "";
   for (let s of sockets) {
-    socketContainerEl.appendChild(createSocketRow(s));
+    socketContainerEl.appendChild(createSocketRow(s[1]));
   }
   
   // Get the socket counter, and update with active socket count
   const counterEl = document.getElementById("socket-counter")
-  counterEl.innerHTML = sockets.filter(s => s.connected).length;
+  counterEl.innerHTML = sockets.filter(s => s[1].connected).length;
   
   // Stop here if there are no unprocessed msgs
   if (!messages.dirty) {
@@ -73,8 +73,15 @@ function tick() {
   // Update message box
   const messageBoxEl = document.getElementById("message-box");
   // Loop through unprocessed messages (getNewMessageList), create html, and append it
+
+  // Find index of socket
   for (let m of messages.getNewMsgList()) {
-    messageBoxEl.appendChild(createMessageRow(m.to, m.msgId, m.text, m.receivedAt));
+    for (var i in sockets) {
+      if (m.to === sockets[i][0]) {
+        break;
+      }
+    }
+    messageBoxEl.appendChild(createMessageRow(i, m.to, m.msgId, m.text, new Date(m.receivedAt).toISOString()));
   }
   // mark all messages processed
   messages.setClean();

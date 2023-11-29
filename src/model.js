@@ -3,7 +3,7 @@ const SOCKET_SERVER_URL = "http://localhost:3000";
 class HttpClient {
   start = () => {
     const Http = new XMLHttpRequest();
-    const url=`${SOCKET_SERVER_URL}/start/3`;
+    const url=`${SOCKET_SERVER_URL}/start/120`;
     Http.open("GET", url);
     Http.send();
 

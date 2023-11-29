@@ -13,16 +13,24 @@ function createSocketRow (s) {
   return item;
 }
 
-function createMessageRow (userId, msgId, text, receivedAt) {
+let msgCount = {}
+function createMessageRow (n, userId, msgId, text, receivedAt) {
   const item = document.createElement("div", {});
-  
+
+  if (n in msgCount) {
+    msgCount[n]++;
+  } else {
+    msgCount[n] = 1;
+  }
+
+  const spacing = '&nbsp;&nbsp;&nbsp;'.repeat(n+1);
   item.innerHTML = `
   <div class='message'>
-    <span class='name'>${userId}</span>
-    <span class='id'>${msgId}</span>
-    <span class='text'>${text}</span>
-    <span class='text'>${receivedAt}</span>
+    <span class='text'>${receivedAt}:</span>${spacing}
+    <span class='name'>${userId}</span>&nbsp;&nbsp;<span class='text'>${text}</span>
+    <span> (${msgCount[n]})</span>
   </div>
   `
+//    <span class='id'>${msgId}</span>
   return item;
 } 
