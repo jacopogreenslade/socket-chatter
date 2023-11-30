@@ -1,14 +1,29 @@
 const SOCKET_SERVER_URL = "http://localhost:3000";
 
 class HttpClient {
-  start = () => {
-    const Http = new XMLHttpRequest();
-    const url=`${SOCKET_SERVER_URL}/start/120`;
-    Http.open("GET", url);
-    Http.send();
 
-    Http.onreadystatechange = (e) => {
-      console.log(Http.responseText)
+  start = () => {
+    const xhr = new XMLHttpRequest();
+    const url=`${SOCKET_SERVER_URL}/start/10`;
+    xhr.open("GET", url);
+    xhr.send();
+
+    xhr.onreadystatechange = (e) => {
+      console.log(xhr.responseText)
+    }
+  }
+
+    done = () => {
+    const xhr = new XMLHttpRequest();
+    const url=`${SOCKET_SERVER_URL}/clientLog`;
+    xhr.open("POST", url, true);
+    const logText = document.getElementById("message-box").innerText;
+    var data2 = new FormData();
+    data2.append('logText', logText);
+    xhr.send(data2);
+
+    xhr.onreadystatechange = (e) => {
+      console.log(xhr.responseText)
     }
   }
 }

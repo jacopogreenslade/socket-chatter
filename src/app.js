@@ -26,8 +26,9 @@ function initApp() {
   // Initial update
   tick();
 
-  // Start the Spmmer GOT
   document.getElementById("start").onclick = startSpamming;
+  document.getElementById("done").onclick = shipLog;
+  document.getElementById("clear").onclick = () => document.getElementById("message-box").innerText = "";
 
   // Destroy all socket connections when done
   document.getElementById("close").onclick = teardown;
@@ -43,6 +44,10 @@ function initApp() {
 
 const startSpamming = () => {
   httpClient.start();
+}
+
+const shipLog = () => {
+  httpClient.done();
 }
 
 function teardown() {
@@ -81,7 +86,9 @@ function tick() {
         break;
       }
     }
-    messageBoxEl.appendChild(createMessageRow(i, m.to, m.msgId, m.text, new Date(m.receivedAt).toISOString()));
+    var rDate = new Date(m.receivedAt);
+    const dateOpt = {timeZone: 'America/New_York', hourCycle: 'h23'};
+    messageBoxEl.appendChild(createMessageRow(i, m.to, m.msgId, m.text, rDate.toLocaleString('en-US', dateOpt)));
   }
   // mark all messages processed
   messages.setClean();
