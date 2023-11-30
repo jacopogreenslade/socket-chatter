@@ -69,7 +69,7 @@ def create_random_message(sid):
     s = ''.join(choice(ascii_uppercase) for i in range(12))
     return { "msgSid": sid, "text": s}
 
-def send_messages(end_delay_seconds, msg_per_sec, step=1):
+def send_messages(end_delay_seconds:int, msg_per_sec:int, method:str, step=1):
     """Send out msgs at the given rate and stop after the given amount of time"""
     app.logger.warning("STARTED SPAMMER BOT")
     end = time.time() + end_delay_seconds
@@ -79,8 +79,12 @@ def send_messages(end_delay_seconds, msg_per_sec, step=1):
                 now = datetime.datetime.now()
                 sid = socket_ids[randint(0, len(socket_ids)-1)]
                 msg = create_random_message(sid)
-                socketio.call("incoming", data=msg, to=sid)
-                app.logger.warning(f"  EMIT {now.strftime('%m/%d/%Y %H:%M:%S')} Group {t+1}/{end_delay_seconds}, Msg {i+1}/{msg_per_sec} {msg['text']} sid {sid}")
+                if method == 'call':
+                    socketio.call("incoming", data=msg, to=sid)
+                    app.logger.warning(f"  CALL {now.strftime('%m/%d/%Y %H:%M:%S')} Group {t+1}/{end_delay_seconds}, Msg {i+1}/{msg_per_sec} {msg['text']} sid {sid}")
+                else:
+                    socketio.emit("incoming", data=msg, to=sid)
+                    app.logger.warning(f"  EMIT {now.strftime('%m/%d/%Y %H:%M:%S')} Group {t+1}/{end_delay_seconds}, Msg {i+1}/{msg_per_sec} {msg['text']} sid {sid}")
 
         # Wait 1 second each time
         time.sleep(step)
@@ -88,13 +92,14 @@ def send_messages(end_delay_seconds, msg_per_sec, step=1):
     app.logger.warning("ENDED SPAMMER BOT")
     
 
-@app.route("/start/<countArg>")
-def start(countArg: int):
+@app.route("/start", methods = ['GET'])
+def start():
     # Start spamming the clients with messages
     if len(socket_ids) == 0:
         return "No connected clients.", 400
-    count = int(countArg)
-    send_messages(count, 3)
+    count = int(request.values['count'])
+    method = request.values['method']
+    send_messages(count, 3, method)
 
     return "Done", 200
 
@@ -115,6 +120,7 @@ def trylog(clientLogText):
     Confirm ACK was received by server to
     Calculate elapsed time
     '''
+    method = "????"
     lines = clientLogText.split('\r\n')
     clientEvents = {}
     userMap = {}
@@ -129,9 +135,9 @@ def trylog(clientLogText):
         serverEvents = {}
         for sline in slf.readlines():
             # '  EMIT Set 3/10; Message 1/3, sid=CLI1NuFsMqU_fla-AAAB\n'
-            if 'EMIT' in sline:
+            if ('CALL' in sline) or ('EMIT' in sline):
                 pieces = sline.strip().split()
-                _, _, sdate, stime, _, _, _, _, stext, _, sid = pieces
+                _, method, sdate, stime, _, _, _, _, stext, _, sid = pieces
                 suser = userMap[sid] if sid in userMap else sid
                 setorappend(serverEvents, stext, [sdate, stime, suser, sid])
                 if stext in clientEvents:
@@ -141,6 +147,7 @@ def trylog(clientLogText):
                     else:
                         setorappend(serverEvents, stext, ['ClientACK','NO',"NO"])
 
+        cscf.write(method + "\n")
         for stext, events in serverEvents.items():
             outline = stext
             for event in events:

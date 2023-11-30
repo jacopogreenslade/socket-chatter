@@ -3,8 +3,10 @@ const SOCKET_SERVER_URL = "http://localhost:3000";
 class HttpClient {
 
   start = () => {
+    const sMethod = document.getElementById("cbMethod").checked;
+    const method = sMethod?'call':'emit';
     const xhr = new XMLHttpRequest();
-    const url=`${SOCKET_SERVER_URL}/start/10`;
+    const url=`${SOCKET_SERVER_URL}/start?count=10&method=${method}`;
     xhr.open("GET", url);
     xhr.send();
 
