@@ -6,7 +6,7 @@ class HttpClient {
     const sMethod = document.getElementById("cbMethod").checked;
     const method = sMethod?'call':'emit';
     const xhr = new XMLHttpRequest();
-    const url=`${SOCKET_SERVER_URL}/start?count=10&method=${method}`;
+    const url=`${SOCKET_SERVER_URL}/start?count=60&method=${method}`;
     xhr.open("GET", url);
     xhr.send();
 
@@ -15,7 +15,7 @@ class HttpClient {
     }
   }
 
-    done = () => {
+  done = () => {
     const xhr = new XMLHttpRequest();
     const url=`${SOCKET_SERVER_URL}/clientLog`;
     xhr.open("POST", url, true);
@@ -23,6 +23,17 @@ class HttpClient {
     var data2 = new FormData();
     data2.append('logText', logText);
     xhr.send(data2);
+
+    xhr.onreadystatechange = (e) => {
+      console.log(xhr.responseText)
+    }
+  }
+
+  checkAck = () => {
+    const xhr = new XMLHttpRequest();
+    const url=`${SOCKET_SERVER_URL}/checkAck/10`;
+    xhr.open("GET", url);
+    xhr.send();
 
     xhr.onreadystatechange = (e) => {
       console.log(xhr.responseText)
@@ -79,7 +90,7 @@ class SocketClient {
 
     this.addMsgToList(this.userid, msgSid, text, Date());
     
-    callback();
+    callback(text);
   }
 
   teardown = () => {

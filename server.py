@@ -1,5 +1,7 @@
+from copy import deepcopy
 import datetime
 import logging
+import socket
 
 import eventlet
 eventlet.monkey_patch()
@@ -7,18 +9,24 @@ eventlet.monkey_patch()
 import time
 from random import choice, randint
 from flask import Flask, request, Response, send_file, g, jsonify
-from flask_socketio import SocketIO, join_room, leave_room
-
+from flask_socketio import SocketIO, join_room, leave_room, socketio as fsio
 
 REDIS_HOST = "redis://localhost:6379"
 
 app = Flask(__name__)
+# Create a stream handler to add timestamp to log messages
+formatter = logging.Formatter(fmt='%(asctime)s %(levelname)-8s %(message)s',
+                              datefmt='%Y-%m-%d %H:%M:%S')
+stream_handler = logging.StreamHandler()
+stream_handler.setFormatter(formatter)
+app.logger.addHandler(stream_handler)
+
 
 logging.basicConfig(filename="logs/socket.log", filemode="w", level=logging.WARNING)
 logging.getLogger('socketio').setLevel(logging.ERROR)
 app.config['SECRET_KEY'] = 'secret!'
 socketio = SocketIO(app, async_mode='eventlet', cors_allowed_origins="*", message_queue=REDIS_HOST,
-                    logger=True, engineio_logger=True)
+                    logger=True, engineio_logger=True, ping_timeout=10, ping_interval=10)
 
 # Long running task
 from concurrent.futures import ThreadPoolExecutor
@@ -58,9 +66,10 @@ def socket_client_disconnected():
 
 @socketio.on_error()
 def handle_error(e):
-    app.logger.error(f"SOCKET.IO ERROR {e}")
+    app.logger.error(f"SOCKET.IO ERROR FFFFF {e}")
 
 socket_ids = []
+open_msgs = {}
 
 from string import ascii_uppercase
 
@@ -80,17 +89,37 @@ def send_messages(end_delay_seconds:int, msg_per_sec:int, method:str, step=1):
                 sid = socket_ids[randint(0, len(socket_ids)-1)]
                 msg = create_random_message(sid)
                 if method == 'call':
-                    socketio.call("incoming", data=msg, to=sid)
-                    app.logger.warning(f"  CALL {now.strftime('%m/%d/%Y %H:%M:%S')} Group {t+1}/{end_delay_seconds}, Msg {i+1}/{msg_per_sec} {msg['text']} sid {sid}")
+                    try:
+                        app.logger.warning(f"  SEND-CALL {now.strftime('%m/%d/%Y %H:%M:%S')} Group {t+1}/{end_delay_seconds}, Msg {i+1}/{msg_per_sec} {msg['text']} sid {sid}")
+                        socketio.call("incoming", data=msg, to=sid)
+                    except fsio.exceptions.TimeoutError as te:
+                        app.logger.warning(f"CALL-TIMEOUT {now.strftime('%m/%d/%Y %H:%M:%S')} Msg {msg['text']}  ")
+                    else:
+                        app.logger.warning(f"CALL-ACK {now.strftime('%m/%d/%Y %H:%M:%S')} Msg {msg['text']}")
+
                 else:
-                    socketio.emit("incoming", data=msg, to=sid)
-                    app.logger.warning(f"  EMIT {now.strftime('%m/%d/%Y %H:%M:%S')} Group {t+1}/{end_delay_seconds}, Msg {i+1}/{msg_per_sec} {msg['text']} sid {sid}")
+                    open_msgs[msg['text']] = now
+                    socketio.emit("incoming", data=msg, to=sid, callback=handle_callback)
+                    app.logger.warning(f"  SEND-EMIT {now.strftime('%m/%d/%Y %H:%M:%S')} Group {t+1}/{end_delay_seconds}, Msg {i+1}/{msg_per_sec} {msg['text']} sid {sid}")
 
         # Wait 1 second each time
         time.sleep(step)
 
     app.logger.warning("ENDED SPAMMER BOT")
-    
+
+def handle_callback(*args):
+    ack_msg = args[0]
+    if ack_msg in open_msgs:
+        now = datetime.datetime.now()
+        app.logger.warning(f"EMIT-ACK {now.strftime('%m/%d/%Y %H:%M:%S')} Msg {ack_msg}")
+        del open_msgs[ack_msg]
+    msgs_unacked = list(open_msgs.items())
+    if len(msgs_unacked) > 0:
+        processing = ""
+        for msg, start in msgs_unacked:
+            processing += f"{msg} ({start.second}); "
+        print("      Still processing: " + processing)
+
 
 @app.route("/start", methods = ['GET'])
 def start():
@@ -135,27 +164,45 @@ def trylog(clientLogText):
         serverEvents = {}
         for sline in slf.readlines():
             # '  EMIT Set 3/10; Message 1/3, sid=CLI1NuFsMqU_fla-AAAB\n'
-            if ('CALL' in sline) or ('EMIT' in sline):
+            if ('SEND-CALL' in sline) or ('SEND-EMIT' in sline):
                 pieces = sline.strip().split()
-                _, method, sdate, stime, _, _, _, _, stext, _, sid = pieces
+                try:
+                    _, method, sdate, stime, _, _, _, _, stext, _, sid = pieces
+                except:
+                    print(pieces)
                 suser = userMap[sid] if sid in userMap else sid
-                setorappend(serverEvents, stext, [sdate, stime, suser, sid])
+                setorappend(serverEvents, stext, ['Sent', sdate, stime, suser, sid])
                 if stext in clientEvents:
                     clientAck = clientEvents[stext]
                     if sid == clientAck[3]:
                         setorappend(serverEvents, stext, ['ClientACK', clientAck[0], clientAck[1]])
                     else:
-                        setorappend(serverEvents, stext, ['ClientACK','NO',"NO"])
+                        setorappend(serverEvents, stext, ['NOClientACK','NO',"NO"])
+            elif 'EMIT-ACK' in sline:
+                pieces = sline.strip().split()
+                _, adate, atime, _, stext = pieces
+                setorappend(serverEvents, stext, ['EmitACK', adate, atime])
+            elif 'EMIT-UNACKED' in sline:
+                pieces = sline.strip().split()
+                _, stext = pieces
+                setorappend(serverEvents, stext, ['NOEmitACK', '?', '?'])
+
+            elif 'CALL-ACK' in sline:
+                pieces = sline.strip().split()
+                _, adate, atime, _, stext = pieces
+                setorappend(serverEvents, stext, ['CallACK', adate, atime])
+            elif 'CALL-TIMEOUT' in sline:
+                pieces = sline.strip().split()
+                _, adate, atime, _, stext = pieces
+                setorappend(serverEvents, stext, ['NOCallACK', adate, atime])
 
         cscf.write(method + "\n")
         for stext, events in serverEvents.items():
             outline = stext
             for event in events:
-                if type(event) is list:
-                    for elt in event:
-                        outline += ' ' + elt
-                else:
-                    outline += ' ' + event
+                for elt in event:
+                    outline += ' ' + elt
+                outline += ';'
 
             cscf.write(outline+"\n")
 
@@ -165,11 +212,22 @@ def setorappend(thedict:dict, key:str, val:list):
     if key in thedict:
         thedict[key].append(val)
     else:
-        thedict[key] = val
+        thedict[key] = [val]
+
+@app.route("/checkAck/<timeout>", methods = ['GET'])
+def check_acks(timeout: int):
+    timeout_seconds = int(timeout)
+    now = datetime.datetime.now()
+    msgs = deepcopy(open_msgs)
+    for msg,start in msgs.items():
+        if now > start + datetime.timedelta(seconds=timeout_seconds):
+            app.logger.warning("EMIT-UNACKED "+msg)
+            del open_msgs[msg]
+    return "Done", 200
 
 @app.route("/end")
 def end_messaging(count: int):
-    # Start spamming the clients with messages
+    # Stop long running task run
     executor.shutdown()
 
     return "Done", 200
