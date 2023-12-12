@@ -28,7 +28,7 @@ function initApp() {
 
   document.getElementById("start").onclick = startSpamming;
   document.getElementById("done").onclick = shipLog;
-  document.getElementById("clear").onclick = () => document.getElementById("message-box").innerText = "";
+  document.getElementById("clear").onclick = clearLog;
 
   // Destroy all socket connections when done
   document.getElementById("close").onclick = teardown;
@@ -48,6 +48,13 @@ const startSpamming = () => {
 
 const shipLog = () => {
   httpClient.done();
+}
+
+const clearLog = () => {
+  document.getElementById("message-box").innerText = "";
+  for (i in msgCount) {
+    msgCount[i] = 0;
+  }
 }
 
 function teardown() {

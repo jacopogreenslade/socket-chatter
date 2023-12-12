@@ -1,3 +1,4 @@
+import json
 from copy import deepcopy
 import datetime
 import logging
@@ -89,36 +90,45 @@ def send_messages(end_delay_seconds:int, msg_per_sec:int, method:str, step=1):
                 sid = socket_ids[randint(0, len(socket_ids)-1)]
                 msg = create_random_message(sid)
                 if method == 'call':
-                    try:
-                        app.logger.warning(f"  SEND-CALL {now.strftime('%m/%d/%Y %H:%M:%S')} Group {t+1}/{end_delay_seconds}, Msg {i+1}/{msg_per_sec} {msg['text']} sid {sid}")
-                        socketio.call("incoming", data=msg, to=sid)
-                    except fsio.exceptions.TimeoutError as te:
-                        app.logger.warning(f"CALL-TIMEOUT {now.strftime('%m/%d/%Y %H:%M:%S')} Msg {msg['text']}  ")
-                    else:
-                        app.logger.warning(f"CALL-ACK {now.strftime('%m/%d/%Y %H:%M:%S')} Msg {msg['text']}")
+                    # For call() must catch the Timeout exception to know if you must keep retrying
+                    countdown = 3
+                    while countdown > 0:
+                        try:
+                            app.logger.warning(f"  SEND-CALL {now.strftime('%m/%d/%Y %H:%M:%S')} Group {t+1}/{end_delay_seconds}, Msg {i+1}/{msg_per_sec} {msg['text']} sid {sid}")
+                            socketio.call("incoming", data=msg, to=sid, timeout=10)
+                        except fsio.exceptions.TimeoutError as te:
+                            countdown -= 1
+                            app.logger.warning(f"CALL-TIMEOUT {4-countdown} {now.strftime('%m/%d/%Y %H:%M:%S')} Msg {msg['text']}  ")
+                        else:
+                            countdown = 0
+                            app.logger.warning(f"CALL-ACK {now.strftime('%m/%d/%Y %H:%M:%S')} Msg {msg['text']}")
 
                 else:
-                    open_msgs[msg['text']] = now
-                    socketio.emit("incoming", data=msg, to=sid, callback=handle_callback)
+                    # For emit() there is no timeout. Keep track of Acknowledgement by the callback
+                    open_msgs[msg['text']] = (now, sid, json.dumps(msg))
                     app.logger.warning(f"  SEND-EMIT {now.strftime('%m/%d/%Y %H:%M:%S')} Group {t+1}/{end_delay_seconds}, Msg {i+1}/{msg_per_sec} {msg['text']} sid {sid}")
+                    socketio.emit("incoming", data=msg, to=sid, callback=emit_callback)
+
+                    # Re-send all unacknowledged emits
+                    time.sleep(1)
+                    msgs_in_process = list(open_msgs.items())
+                    if len(msgs_in_process) > 0:
+                        for msgtext, msgdetail in msgs_in_process:
+                            print("      RE-EMIT-P: " + msgtext)
+                            socketio.emit("incoming", data=json.loads(msgdetail[2]), to=msgdetail[1], callback=emit_callback)
+
 
         # Wait 1 second each time
         time.sleep(step)
 
     app.logger.warning("ENDED SPAMMER BOT")
 
-def handle_callback(*args):
+def emit_callback(*args):
     ack_msg = args[0]
     if ack_msg in open_msgs:
         now = datetime.datetime.now()
         app.logger.warning(f"EMIT-ACK {now.strftime('%m/%d/%Y %H:%M:%S')} Msg {ack_msg}")
         del open_msgs[ack_msg]
-    msgs_unacked = list(open_msgs.items())
-    if len(msgs_unacked) > 0:
-        processing = ""
-        for msg, start in msgs_unacked:
-            processing += f"{msg} ({start.second}); "
-        print("      Still processing: " + processing)
 
 
 @app.route("/start", methods = ['GET'])
@@ -193,8 +203,8 @@ def trylog(clientLogText):
                 setorappend(serverEvents, stext, ['CallACK', adate, atime])
             elif 'CALL-TIMEOUT' in sline:
                 pieces = sline.strip().split()
-                _, adate, atime, _, stext = pieces
-                setorappend(serverEvents, stext, ['NOCallACK', adate, atime])
+                _, timeoutcounter, adate, atime, _, stext = pieces
+                setorappend(serverEvents, stext, ['NOCallACK '+timeoutcounter, adate, atime])
 
         cscf.write(method + "\n")
         for stext, events in serverEvents.items():
@@ -219,7 +229,7 @@ def check_acks(timeout: int):
     timeout_seconds = int(timeout)
     now = datetime.datetime.now()
     msgs = deepcopy(open_msgs)
-    for msg,start in msgs.items():
+    for msg,(start,sid,msgjson) in msgs.items():
         if now > start + datetime.timedelta(seconds=timeout_seconds):
             app.logger.warning("EMIT-UNACKED "+msg)
             del open_msgs[msg]
