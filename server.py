@@ -95,7 +95,7 @@ def send_messages(end_delay_seconds:int, msg_per_sec:int, method:str, step=1):
                     while countdown > 0:
                         try:
                             app.logger.warning(f"  SEND-CALL {now.strftime('%m/%d/%Y %H:%M:%S')} Group {t+1}/{end_delay_seconds}, Msg {i+1}/{msg_per_sec} {msg['text']} sid {sid}")
-                            socketio.call("incoming", data=msg, to=sid, timeout=3)
+                            socketio.call("incoming", data=msg, to=sid, timeout=10)
                         except fsio.exceptions.TimeoutError as te:
                             countdown -= 1 # Decrement
                             app.logger.warning(f"CALL-TIMEOUT {4-countdown} {now.strftime('%m/%d/%Y %H:%M:%S')} Msg {msg['text']}  ")
@@ -103,22 +103,27 @@ def send_messages(end_delay_seconds:int, msg_per_sec:int, method:str, step=1):
                             countdown = -1 # Set to SUCCESS
                             app.logger.warning(f"CALL-ACK {now.strftime('%m/%d/%Y %H:%M:%S')} Msg {msg['text']}")
                     if countdown == 0:
-                        app.logger.warning(f"CALL-UNACKED {now.strftime('%m/%d/%Y %H:%M:%S')} Msg {msg['text']}  ")
+                        app.logger.warning(f"CALL-UNACKED {now.strftime('%m/%d/%Y %H:%M:%S')} Msg {msg['text']}")
 
                 else:
                     # For emit() there is no timeout. Keep track of Acknowledgement by the callback
-                    open_msgs[msg['text']] = (now, sid, json.dumps(msg))
+                    open_msgs[msg['text']] = [now, sid, json.dumps(msg), 0]
                     app.logger.warning(f"  SEND-EMIT {now.strftime('%m/%d/%Y %H:%M:%S')} Group {t+1}/{end_delay_seconds}, Msg {i+1}/{msg_per_sec} {msg['text']} sid {sid}")
                     socketio.emit("incoming", data=msg, to=sid, callback=emit_callback)
 
-                    # Re-send all unacknowledged emits
+                    # Re-send all unacknowledged emits but wait 1s for this one to acknowledge
                     time.sleep(1)
                     msgs_in_process = list(open_msgs.items())
                     if len(msgs_in_process) > 0:
                         for msgtext, msgdetail in msgs_in_process:
-                            print("      RE-EMIT-P: " + msgtext)
-                            socketio.emit("incoming", data=json.loads(msgdetail[2]), to=msgdetail[1], callback=emit_callback)
-
+                            if msgdetail[3] < 10:
+                                time.sleep(0.5)
+                                msgdetail[3] = msgdetail[3] + 1
+                                print("      RE-EMIT-P: " + msgtext)
+                                socketio.emit("incoming", data=json.loads(msgdetail[2]), to=msgdetail[1], callback=emit_callback)
+                            else:
+                                app.logger.warning(f"EMIT-UNACKED {now.strftime('%m/%d/%Y %H:%M:%S')} Msg {msg['text']}")
+                                del open_msgs[msgtext]
 
         # Wait 1 second each time
         time.sleep(step)
@@ -199,8 +204,8 @@ def trylog(clientLogText):
                 ackedMsgs.append(stext)
             elif 'EMIT-UNACKED' in sline:
                 pieces = sline.strip().split()
-                _, stext = pieces
-                setorappend(serverEvents, stext, ['NOEmitACK', '?', '?'])
+                _, adate, atime, _, stext = pieces
+                setorappend(serverEvents, stext, ['NOEmitACK', adate, atime])
                 noackedMsgs.append(stext)
             elif 'CALL-ACK' in sline:
                 pieces = sline.strip().split()
@@ -238,17 +243,6 @@ def setorappend(thedict:dict, key:str, val:list):
         thedict[key].append(val)
     else:
         thedict[key] = [val]
-
-@app.route("/checkAck/<timeout>", methods = ['GET'])
-def check_acks(timeout: int):
-    timeout_seconds = int(timeout)
-    now = datetime.datetime.now()
-    msgs = deepcopy(open_msgs)
-    for msg,(start,sid,msgjson) in msgs.items():
-        if now > start + datetime.timedelta(seconds=timeout_seconds):
-            app.logger.warning("EMIT-UNACKED "+msg)
-            del open_msgs[msg]
-    return "Done", 200
 
 @app.route("/end")
 def end_messaging(count: int):

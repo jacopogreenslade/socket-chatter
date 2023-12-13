@@ -28,17 +28,6 @@ class HttpClient {
       console.log(xhr.responseText)
     }
   }
-
-  checkAck = () => {
-    const xhr = new XMLHttpRequest();
-    const url=`${SOCKET_SERVER_URL}/checkAck/10`;
-    xhr.open("GET", url);
-    xhr.send();
-
-    xhr.onreadystatechange = (e) => {
-      console.log(xhr.responseText)
-    }
-  }
 }
 
 class SocketClient {

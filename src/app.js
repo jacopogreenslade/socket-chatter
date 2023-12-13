@@ -65,8 +65,6 @@ function teardown() {
 
 function tick() {
   console.log("Updating app...");
-  // Make the server check for lost acknowledgements
-    httpClient.checkAck();
 
   // Get socket container, clear it, then create and populate socket list
   const socketContainerEl = document.getElementById("socket-agent-container");
