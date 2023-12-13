@@ -95,13 +95,15 @@ def send_messages(end_delay_seconds:int, msg_per_sec:int, method:str, step=1):
                     while countdown > 0:
                         try:
                             app.logger.warning(f"  SEND-CALL {now.strftime('%m/%d/%Y %H:%M:%S')} Group {t+1}/{end_delay_seconds}, Msg {i+1}/{msg_per_sec} {msg['text']} sid {sid}")
-                            socketio.call("incoming", data=msg, to=sid, timeout=10)
+                            socketio.call("incoming", data=msg, to=sid, timeout=3)
                         except fsio.exceptions.TimeoutError as te:
-                            countdown -= 1
+                            countdown -= 1 # Decrement
                             app.logger.warning(f"CALL-TIMEOUT {4-countdown} {now.strftime('%m/%d/%Y %H:%M:%S')} Msg {msg['text']}  ")
                         else:
-                            countdown = 0
+                            countdown = -1 # Set to SUCCESS
                             app.logger.warning(f"CALL-ACK {now.strftime('%m/%d/%Y %H:%M:%S')} Msg {msg['text']}")
+                    if countdown == 0:
+                        app.logger.warning(f"CALL-UNACKED {now.strftime('%m/%d/%Y %H:%M:%S')} Msg {msg['text']}  ")
 
                 else:
                     # For emit() there is no timeout. Keep track of Acknowledgement by the callback
@@ -172,6 +174,8 @@ def trylog(clientLogText):
 
     with open("logs/compare.txt", "w") as cscf, open("logs/socket.log") as slf:
         serverEvents = {}
+        ackedMsgs = []
+        noackedMsgs = []
         for sline in slf.readlines():
             # '  EMIT Set 3/10; Message 1/3, sid=CLI1NuFsMqU_fla-AAAB\n'
             if ('SEND-CALL' in sline) or ('SEND-EMIT' in sline):
@@ -192,21 +196,32 @@ def trylog(clientLogText):
                 pieces = sline.strip().split()
                 _, adate, atime, _, stext = pieces
                 setorappend(serverEvents, stext, ['EmitACK', adate, atime])
+                ackedMsgs.append(stext)
             elif 'EMIT-UNACKED' in sline:
                 pieces = sline.strip().split()
                 _, stext = pieces
                 setorappend(serverEvents, stext, ['NOEmitACK', '?', '?'])
-
+                noackedMsgs.append(stext)
             elif 'CALL-ACK' in sline:
                 pieces = sline.strip().split()
                 _, adate, atime, _, stext = pieces
                 setorappend(serverEvents, stext, ['CallACK', adate, atime])
+                ackedMsgs.append(stext)
             elif 'CALL-TIMEOUT' in sline:
                 pieces = sline.strip().split()
                 _, timeoutcounter, adate, atime, _, stext = pieces
-                setorappend(serverEvents, stext, ['NOCallACK '+timeoutcounter, adate, atime])
+                setorappend(serverEvents, stext, ['Call-timer '+timeoutcounter, adate, atime])
+            elif 'CALL-UNACKED' in sline:
+                pieces = sline.strip().split()
+                _, adate, atime, _, stext = pieces
+                setorappend(serverEvents, stext, ['NOCallACK ', adate, atime])
+                noackedMsgs.append(stext)
 
         cscf.write(method + "\n")
+        cscf.write(f"A: {len(ackedMsgs)}\n")
+        cscf.write(f"N: {len(noackedMsgs)}\n")
+        cscf.write(f"T: {len(ackedMsgs)+len(noackedMsgs)}\n")
+        cscf.write("\n")
         for stext, events in serverEvents.items():
             outline = stext
             for event in events:
