@@ -12,11 +12,11 @@
 <body>
   <script src="https://cdn.socket.io/4.6.0/socket.io.min.js" integrity="sha384-c79GN5VsunZvi+Q/WObgk2in0CbZsHnjEqvFxC5DxHn9lTfNce2WW6h2pH6u/kF+" crossorigin="anonymous"></script>
 
-  <h1>This is a simple page that creates socket clients</h1>
-  <div id="socket-counter-wrapper" class="socket-counter">Currently active sockets: 
-    <span id="socket-counter">Wrong</span>
-    <button id="close">Close all connections</button>
-  </div>
+  <h1>Socket client flooder</h1>
+   <button id="open">Open all connections</button>
+   <div id="socket-counter-wrapper" class="socket-counter">Currently active sockets:    <span id="socket-counter">--</span>
+   </div>
+   <button id="close">Close all connections</button>
   <div id="socket-agent-container"></div>
   <p></p>
   <h2>SocketIO Method</h2>

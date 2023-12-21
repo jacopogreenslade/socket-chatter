@@ -30,6 +30,9 @@ function initApp() {
   document.getElementById("done").onclick = shipLog;
   document.getElementById("clear").onclick = clearLog;
 
+
+  // Create all socket connections
+  document.getElementById("open").onclick = setupConnections;
   // Destroy all socket connections when done
   document.getElementById("close").onclick = teardown;
   // Update app every second
@@ -54,6 +57,12 @@ const clearLog = () => {
   document.getElementById("message-box").innerText = "";
   for (i in msgCount) {
     msgCount[i] = 0;
+  }
+}
+
+function setupConnections() {
+  for (const s of sockets) {
+    s[1].connectHandler();
   }
 }
 

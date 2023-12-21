@@ -5,6 +5,8 @@ import logging
 import socket
 
 import eventlet
+import redis
+
 eventlet.monkey_patch()
 
 import time
@@ -13,7 +15,7 @@ from flask import Flask, request, Response, send_file, g, jsonify
 from flask_socketio import SocketIO, join_room, leave_room, socketio as fsio
 
 REDIS_HOST = "redis://localhost:6379"
-
+REDIS_HASH = 'survey160'
 app = Flask(__name__)
 # Create a stream handler to add timestamp to log messages
 formatter = logging.Formatter(fmt='%(asctime)s %(levelname)-8s %(message)s',
@@ -22,6 +24,8 @@ stream_handler = logging.StreamHandler()
 stream_handler.setFormatter(formatter)
 app.logger.addHandler(stream_handler)
 
+rdb = redis.Redis()
+rdb.delete(REDIS_HASH)
 
 logging.basicConfig(filename="logs/socket.log", filemode="w", level=logging.WARNING)
 logging.getLogger('socketio').setLevel(logging.ERROR)
@@ -36,10 +40,9 @@ executor = None
 
 @socketio.on("connect")
 def connect_socket():
-    socket_ids.append(request.sid)
-    print(socket_ids)
-
-    app.logger.warning(f'SOCKET CONNECTED {request.sid}')
+    cur_sid = request.sid
+    socket_ids.append(cur_sid)
+    app.logger.warning(f'SOCKET CONNECTED {cur_sid}')
 
 @socketio.on('join_room')
 def setup_connection(data):
@@ -47,23 +50,43 @@ def setup_connection(data):
     room = data["room"]
     userid = data["userid"]
 
+    # Record client to Redis
+    cur_sid = request.sid
+
+    rdb.hset(room, cur_sid, userid)
+    sockets = rdb.hgetall(room)
+    print('++',sockets,'++')
+
     join_room(room)
     app.logger.warning(f'JOIN ROOM (userid={userid},room={room})')
 
-@socketio.on('leaveroom')
+@socketio.on('leave_room')
 def shutdown_connection(data):  
     # Removes this (the connection it came from) to the specified room.
     room = data["room"]
     userid = data["userid"]
+
+    """
+    if rdb.hexists(room, request.sid):
+        rdb.hdel(room, request.sid)
+    sockets = rdb.hgetall(room)
+    print('--',sockets,'--')
+    """
 
     leave_room(room)
     app.logger.warning(f'LEAVE ROOM (userid={userid},room={room})')
 
 @socketio.on("disconnect")
 def socket_client_disconnected():
-    socket_ids.remove(request.sid)
-    print(socket_ids)
-    app.logger.warning(f"CLIENT DISCONNECTED {request.sid}")
+    cur_sid= request.sid
+    socket_ids.remove(cur_sid)
+
+    if rdb.hexists(REDIS_HASH, request.sid):
+        rdb.hdel(REDIS_HASH, request.sid)
+    sockets = rdb.hgetall(REDIS_HASH)
+    print('-DISC-',sockets,'-DISC-')
+
+    app.logger.warning(f"CLIENT DISCONNECTED {cur_sid}")
 
 @socketio.on_error()
 def handle_error(e):
@@ -88,27 +111,30 @@ def send_messages(end_delay_seconds:int, msg_per_sec:int, method:str, step=1):
             if len(socket_ids) > 1:
                 now = datetime.datetime.now()
                 sid = socket_ids[randint(0, len(socket_ids)-1)]
+                userid = str(rdb.hget(REDIS_HASH, sid))
                 msg = create_random_message(sid)
+                uniq_msgtext = msg['text']
                 if method == 'call':
                     # For call() must catch the Timeout exception to know if you must keep retrying
                     countdown = 3
                     while countdown > 0:
                         try:
-                            app.logger.warning(f"  SEND-CALL {now.strftime('%m/%d/%Y %H:%M:%S')} Group {t+1}/{end_delay_seconds}, Msg {i+1}/{msg_per_sec} {msg['text']} sid {sid}")
-                            socketio.call("incoming", data=msg, to=sid, timeout=10)
+                            app.logger.warning(f"  SEND-CALL {now.strftime('%m/%d/%Y %H:%M:%S')} Group {t+1}/{end_delay_seconds}, Msg {i+1}/{msg_per_sec} {uniq_msgtext} sid {sid}, user {userid}")
+                            socketio.call("incoming", data=msg, to=sid, timeout=10, namespace='/')
                         except fsio.exceptions.TimeoutError as te:
                             countdown -= 1 # Decrement
-                            app.logger.warning(f"CALL-TIMEOUT {4-countdown} {now.strftime('%m/%d/%Y %H:%M:%S')} Msg {msg['text']}  ")
+                            app.logger.warning(f"CALL-TIMEOUT {4-countdown} {now.strftime('%m/%d/%Y %H:%M:%S')} Msg {uniq_msgtext} user {userid} ")
                         else:
                             countdown = -1 # Set to SUCCESS
-                            app.logger.warning(f"CALL-ACK {now.strftime('%m/%d/%Y %H:%M:%S')} Msg {msg['text']}")
+                            app.logger.warning(f"CALL-ACK {now.strftime('%m/%d/%Y %H:%M:%S')} Msg {uniq_msgtext} from user {userid}")
                     if countdown == 0:
-                        app.logger.warning(f"CALL-UNACKED {now.strftime('%m/%d/%Y %H:%M:%S')} Msg {msg['text']}")
+                        app.logger.warning(f"CALL-UNACKED {now.strftime('%m/%d/%Y %H:%M:%S')} Msg {uniq_msgtext}")
+                        del open_msgs[msgtext]
 
                 else:
                     # For emit() there is no timeout. Keep track of Acknowledgement by the callback
-                    open_msgs[msg['text']] = [now, sid, json.dumps(msg), 0]
-                    app.logger.warning(f"  SEND-EMIT {now.strftime('%m/%d/%Y %H:%M:%S')} Group {t+1}/{end_delay_seconds}, Msg {i+1}/{msg_per_sec} {msg['text']} sid {sid}")
+                    open_msgs[uniq_msgtext] = [now, sid, json.dumps(msg), 0]
+                    app.logger.warning(f"  SEND-EMIT {now.strftime('%m/%d/%Y %H:%M:%S')} Group {t+1}/{end_delay_seconds}, Msg {i+1}/{msg_per_sec} {uniq_msgtext} sid {sid} user {userid}")
                     socketio.emit("incoming", data=msg, to=sid, callback=emit_callback)
 
                     # Re-send all unacknowledged emits but wait 1s for this one to acknowledge
@@ -122,7 +148,7 @@ def send_messages(end_delay_seconds:int, msg_per_sec:int, method:str, step=1):
                                 print("      RE-EMIT-P: " + msgtext)
                                 socketio.emit("incoming", data=json.loads(msgdetail[2]), to=msgdetail[1], callback=emit_callback)
                             else:
-                                app.logger.warning(f"EMIT-UNACKED {now.strftime('%m/%d/%Y %H:%M:%S')} Msg {msg['text']}")
+                                app.logger.warning(f"EMIT-UNACKED {now.strftime('%m/%d/%Y %H:%M:%S')} Msg {uniq_msgtext} from user {userid}")
                                 del open_msgs[msgtext]
 
         # Wait 1 second each time
